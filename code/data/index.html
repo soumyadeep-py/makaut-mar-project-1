@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Smart Plant Monitor</title>
+
+    <link
+        rel="stylesheet"
+        href="/style.css"
+    >
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div>
+            <h1>Smart Plant</h1>
+            <p>ESP32 Indoor Plant Monitoring System</p>
+        </div>
+
+        <div class="connection">
+            <span
+                id="connectionDot"
+                class="dot offline"
+            ></span>
+
+            <span id="connectionText">
+                Connecting...
+            </span>
+        </div>
+    </header>
+
+
+    <main class="container">
+
+        <!-- SYSTEM STATUS -->
+
+        <section class="system-card">
+
+            <div class="system-item">
+                <span class="label">
+                    System Status
+                </span>
+
+                <span
+                    id="systemStatus"
+                    class="status normal"
+                >
+                    NORMAL
+                </span>
+            </div>
+
+
+            <div class="system-item">
+                <span class="label">
+                    Wi-Fi
+                </span>
+
+                <span
+                    id="wifiStatus"
+                    class="status"
+                >
+                    ON
+                </span>
+            </div>
+
+        </section>
+
+
+        <!-- SENSOR GRID -->
+
+        <section class="sensor-grid">
+
+
+            <!-- SOIL -->
+
+            <div class="sensor-card">
+
+                <div class="sensor-header">
+
+                    <div>
+                        <h2>Soil Moisture</h2>
+                        <p>Capacitive Sensor</p>
+                    </div>
+
+                    <span
+                        id="soilState"
+                        class="sensor-state"
+                    >
+                        --
+                    </span>
+
+                </div>
+
+                <div
+                    id="soilValue"
+                    class="sensor-value"
+                >
+                    --
+                </div>
+
+                <div class="unit">
+                    %
+                </div>
+
+            </div>
+
+
+            <!-- TEMPERATURE -->
+
+            <div class="sensor-card">
+
+                <div class="sensor-header">
+
+                    <div>
+                        <h2>Temperature</h2>
+                        <p>AHT20</p>
+                    </div>
+
+                    <span
+                        id="temperatureState"
+                        class="sensor-state"
+                    >
+                        --
+                    </span>
+
+                </div>
+
+                <div
+                    id="temperatureValue"
+                    class="sensor-value"
+                >
+                    --
+                </div>
+
+                <div class="unit">
+                    °C
+                </div>
+
+            </div>
+
+
+            <!-- HUMIDITY -->
+
+            <div class="sensor-card">
+
+                <div class="sensor-header">
+
+                    <div>
+                        <h2>Humidity</h2>
+                        <p>AHT20</p>
+                    </div>
+
+                    <span
+                        id="humidityState"
+                        class="sensor-state"
+                    >
+                        --
+                    </span>
+
+                </div>
+
+                <div
+                    id="humidityValue"
+                    class="sensor-value"
+                >
+                    --
+                </div>
+
+                <div class="unit">
+                    %
+                </div>
+
+            </div>
+
+
+            <!-- LIGHT -->
+
+            <div class="sensor-card">
+
+                <div class="sensor-header">
+
+                    <div>
+                        <h2>Light</h2>
+                        <p>BH1750</p>
+                    </div>
+
+                    <span
+                        id="lightState"
+                        class="sensor-state"
+                    >
+                        --
+                    </span>
+
+                </div>
+
+                <div
+                    id="lightValue"
+                    class="sensor-value"
+                >
+                    --
+                </div>
+
+                <div class="unit">
+                    lux
+                </div>
+
+            </div>
+
+
+        </section>
+
+
+        <!-- MESSAGE -->
+
+        <section class="message-card">
+
+            <h2>System Information</h2>
+
+            <p id="systemMessage">
+                Waiting for ESP32 data...
+            </p>
+
+        </section>
+
+
+    </main>
+
+
+    <footer>
+        Smart Plant Monitoring System • ESP32
+    </footer>
+
+
+    <script src="/script.js"></script>
+
+</body>
+</html>
