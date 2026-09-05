@@ -119,7 +119,7 @@ SystemMode systemMode = NORMAL_MODE;
 // Sequence:
 //
 // Soil    → 3s ACTIVE → 5s REST
-// AHT20   → 3s ACTIVE → 5s REST
+// AHT21B  → 3s ACTIVE → 5s REST
 // BH1750  → 3s ACTIVE → 5s REST
 //
 // Full cycle = 24 seconds
@@ -468,14 +468,14 @@ void readSoil() {
 
 
 // ============================================================
-//                        AHT20 SENSOR
+//                        AHT21B SENSOR
 // ============================================================
 
 SensorState ahtState = SENSOR_NOT_FOUND;
 
 
 // ------------------------------------------------------------
-// Read AHT20
+// Read AHT21B
 // ------------------------------------------------------------
 
 void readAHT() {
@@ -2411,11 +2411,11 @@ void setup() {
 
 
   // ==========================================================
-  // AHT20
+  // AHT21B
   // ==========================================================
 
   if (
-    aht.begin()
+    aht.begin(&Wire)
   ) {
 
     ahtDetected = true;
@@ -2424,7 +2424,7 @@ void setup() {
       SENSOR_RESTING;
 
     Serial.println(
-      "AHT20 detected."
+      "AHT21B detected."
     );
 
   }
@@ -2437,7 +2437,7 @@ void setup() {
       SENSOR_NOT_FOUND;
 
     Serial.println(
-      "AHT20 NOT FOUND."
+      "AHT21B NOT FOUND."
     );
   }
 

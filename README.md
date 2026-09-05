@@ -30,7 +30,7 @@ The system is designed to reduce unnecessary sensor polling by operating the sen
 |---|---:|
 | ESP32 WROOM-32 Development Board | 1 |
 | Capacitive Soil Moisture Sensor | 1 |
-| AHT20 Temperature & Humidity Sensor | 1 |
+| AHT21B Temperature & Humidity Sensor | 1 |
 | BH1750 Ambient Light Sensor | 1 |
 | 0.96" OLED Display | 1 |
 | Common-Cathode RGB LED | 1 |
@@ -54,14 +54,14 @@ The system is designed to reduce unnecessary sensor polling by operating the sen
 | Passive Buzzer | GPIO 14 |
 | OLED I2C Address | 0x3C |
 
-The AHT20, BH1750 and OLED share the same I2C bus:
+The AHT21B, BH1750 and OLED share the same I2C bus:
 
 ```text
-ESP32 GPIO 21 ───── SDA ───── AHT20
+ESP32 GPIO 21 ───── SDA ───── AHT21B
                            ├── BH1750
                            └── OLED
 
-ESP32 GPIO 22 ───── SCL ───── AHT20
+ESP32 GPIO 22 ───── SCL ───── AHT21B
                            ├── BH1750
                            └── OLEDz
 ```
