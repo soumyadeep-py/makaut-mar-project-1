@@ -18,6 +18,10 @@
 #define I2C_SCL        22
 
 #define BUTTON_PIN     27
+#define OLED_LEFT_PIN  32
+#define OLED_RIGHT_PIN 4
+#define OLED_UP_PIN    16
+#define OLED_DOWN_PIN  17
 
 #define RGB_R_PIN      25
 #define RGB_G_PIN      26
@@ -251,8 +255,11 @@ const unsigned long BUZZER_BEEP_TIME = 150UL;
 // ============================================================
 
 unsigned long lastButtonChange = 0;
+unsigned long oledButtonChange[4] = {0, 0, 0, 0};
 
 const unsigned long DEBOUNCE_TIME = 50UL;
+
+uint8_t oledContrast = 128;
 
 
 // ============================================================
@@ -1224,6 +1231,10 @@ void stopWiFiAP() {
 // Button connection:
 //
 // GPIO 27 ---- BUTTON ---- GND
+// GPIO 32 ---- OLED LEFT BUTTON ---- GND
+// GPIO 4  ---- OLED RIGHT BUTTON --- GND
+// GPIO 16 ---- OLED UP BUTTON ------ GND
+// GPIO 17 ---- OLED DOWN BUTTON ---- GND
 // ============================================================
 
 void checkButton() {
@@ -1283,10 +1294,100 @@ void checkButton() {
         );
 
 
+        wifiDisconnectTime = 0;
+
+
         if (!wifiActive) {
 
           startWiFiAP();
         }
+      }
+    }
+  }
+}
+
+
+void changeOLEDPage(int direction) {
+
+  unsigned long now = millis();
+
+  oledLastChange = now;
+
+  if (oledDetected) {
+    memcpy(
+      oledOutgoingFrame,
+      display.getBuffer(),
+      sizeof(oledOutgoingFrame)
+    );
+  }
+
+  oledPage += direction;
+
+  if (oledPage >= OLED_PAGE_COUNT) {
+    oledPage = 0;
+  }
+
+  if (oledPage < 0) {
+    oledPage = OLED_PAGE_COUNT - 1;
+  }
+
+  oledTransitionStart = now;
+  oledTransitionActive = true;
+}
+
+
+void setOLEDContrast() {
+
+  if (!oledDetected) {
+    return;
+  }
+
+  display.ssd1306_command(SSD1306_SETCONTRAST);
+  display.ssd1306_command(oledContrast);
+}
+
+
+void checkOLEDButton() {
+
+  const int buttonPins[4] = {
+    OLED_LEFT_PIN,
+    OLED_RIGHT_PIN,
+    OLED_UP_PIN,
+    OLED_DOWN_PIN
+  };
+
+  static bool lastReading[4] = {HIGH, HIGH, HIGH, HIGH};
+  static bool stableState[4] = {HIGH, HIGH, HIGH, HIGH};
+
+  for (int index = 0; index < 4; index++) {
+    bool reading = digitalRead(buttonPins[index]);
+
+    if (reading != lastReading[index]) {
+      oledButtonChange[index] = millis();
+      lastReading[index] = reading;
+    }
+
+    if (
+      millis() - oledButtonChange[index] >=
+      DEBOUNCE_TIME &&
+      reading != stableState[index]
+    ) {
+      stableState[index] = reading;
+
+      if (stableState[index] == LOW) {
+        if (index == 0) {
+          changeOLEDPage(-1);
+        } else if (index == 1) {
+          changeOLEDPage(1);
+        } else if (index == 2 && oledContrast <= 245) {
+          oledContrast += 40;
+          setOLEDContrast();
+        } else if (index == 3 && oledContrast >= 10) {
+          oledContrast -= 40;
+          setOLEDContrast();
+        }
+
+        Serial.println("OLED BUTTON PRESSED");
       }
     }
   }
@@ -2560,32 +2661,7 @@ void oledTask() {
     OLED_SLIDE_TIME
   ) {
 
-    oledLastChange =
-      now;
-
-    if (oledDetected) {
-      memcpy(
-        oledOutgoingFrame,
-        display.getBuffer(),
-        sizeof(oledOutgoingFrame)
-      );
-    }
-
-
-    oledPage++;
-
-
-    if (
-      oledPage >=
-      OLED_PAGE_COUNT
-    ) {
-
-      oledPage = 0;
-    }
-
-
-    oledTransitionStart = now;
-    oledTransitionActive = true;
+    changeOLEDPage(1);
     pageChanged = true;
   }
 
@@ -2674,6 +2750,12 @@ void setup() {
   );
 
 
+  pinMode(OLED_LEFT_PIN, INPUT_PULLUP);
+  pinMode(OLED_RIGHT_PIN, INPUT_PULLUP);
+  pinMode(OLED_UP_PIN, INPUT_PULLUP);
+  pinMode(OLED_DOWN_PIN, INPUT_PULLUP);
+
+
   pinMode(
     RGB_R_PIN,
     OUTPUT
@@ -2746,6 +2828,7 @@ void setup() {
   ) {
 
     oledDetected = true;
+  setOLEDContrast();
 
     Serial.println(
       "OLED detected."
@@ -2941,6 +3024,14 @@ void setup() {
     "GPIO 27 -> GND wakes Wi-Fi again."
   );
 
+  Serial.println(
+    "OLED controls: GPIO 32 left, 4 right, 16 up, 17 down."
+  );
+
+  Serial.println(
+    "Up/down change contrast by 10."
+  );
+
   Serial.println();
 }
 
@@ -2953,6 +3044,7 @@ void loop() {
 
   // Button
   checkButton();
+  checkOLEDButton();
 
 
   // Wi-Fi
@@ -2990,3 +3082,4 @@ void loop() {
   // RGB
   updateRGB();
 }
+
