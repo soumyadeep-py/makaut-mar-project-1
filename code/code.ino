@@ -216,13 +216,23 @@ const float LIGHT_CLEAR_LOW = 150.0;
 //                        OLED SLIDESHOW
 // ============================================================
 
-const unsigned long OLED_SLIDE_TIME = 2500UL;
+const unsigned long OLED_SLIDE_TIME = 4000UL;
+const unsigned long OLED_FRAME_TIME = 40UL;
+const unsigned long OLED_TRANSITION_TIME = 500UL;
 
 unsigned long oledLastChange = 0;
+unsigned long oledLastFrame = 0;
+unsigned long oledTransitionStart = 0;
 
 int oledPage = 0;
 
 const int OLED_PAGE_COUNT = 6;
+
+bool oledTransitionActive = false;
+
+uint8_t oledOutgoingFrame[
+  SCREEN_WIDTH * SCREEN_HEIGHT / 8
+];
 
 
 // ============================================================
@@ -1779,7 +1789,7 @@ void oledHeader(
 //                       OLED DISPLAY
 // ============================================================
 
-void showOLED() {
+void showLegacyOLED() {
 
   if (!oledDetected)
     return;
@@ -2172,6 +2182,365 @@ void showOLED() {
   }
 
 
+  if (oledTransitionActive) {
+
+    unsigned long transitionElapsed =
+      millis() - oledTransitionStart;
+
+    if (transitionElapsed >= OLED_TRANSITION_TIME) {
+
+      oledTransitionActive = false;
+
+    } else {
+
+      float transitionProgress =
+        (float)transitionElapsed /
+        OLED_TRANSITION_TIME;
+
+      float easedProgress =
+        1.0 -
+        (
+          (1.0 - transitionProgress) *
+          (1.0 - transitionProgress) *
+          (1.0 - transitionProgress)
+        );
+
+      int revealedHeight =
+        (int)(easedProgress * SCREEN_HEIGHT);
+
+      display.fillRect(
+        0,
+        revealedHeight,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT - revealedHeight,
+        SSD1306_BLACK
+      );
+    }
+  }
+
+
+  display.display();
+}
+
+
+void oledCenteredText(
+  const String& text,
+  int y,
+  int textSize
+) {
+
+  int16_t x1;
+  int16_t y1;
+  uint16_t width;
+  uint16_t height;
+
+  display.setTextSize(textSize);
+  display.getTextBounds(
+    text,
+    0,
+    y,
+    &x1,
+    &y1,
+    &width,
+    &height
+  );
+
+  display.setCursor(
+    (SCREEN_WIDTH - width) / 2,
+    y
+  );
+
+  display.print(text);
+}
+
+
+void oledSensorFooter(
+  SensorState state
+) {
+
+  display.setTextSize(1);
+
+  if (state == SENSOR_NOT_FOUND) {
+    oledCenteredText("SENSOR NOT FOUND", 51, 1);
+  }
+
+  else if (state == SENSOR_FAULT) {
+    oledCenteredText("SENSOR FAULT", 51, 1);
+  }
+
+  else {
+    oledCenteredText(
+      sensorStateToString(state),
+      51,
+      1
+    );
+  }
+}
+
+
+void oledProgressBar(
+  float value,
+  float maximum
+) {
+
+  const int barX = 12;
+  const int barY = 43;
+  const int barWidth = 104;
+  const int barHeight = 6;
+
+  display.drawRoundRect(
+    barX,
+    barY,
+    barWidth,
+    barHeight,
+    2,
+    SSD1306_WHITE
+  );
+
+  if (isnan(value) || value <= 0.0) {
+    return;
+  }
+
+  float limitedValue = value;
+
+  if (limitedValue > maximum) {
+    limitedValue = maximum;
+  }
+
+  int fillWidth =
+    (int)(
+      (limitedValue / maximum) *
+      (barWidth - 4)
+    );
+
+  if (fillWidth > 0) {
+    display.fillRoundRect(
+      barX + 2,
+      barY + 2,
+      fillWidth,
+      barHeight - 4,
+      1,
+      SSD1306_WHITE
+    );
+  }
+}
+
+
+void oledPageHeader() {
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(3, 1);
+  display.print("PLANT MONITOR");
+
+  display.setCursor(109, 1);
+  display.print(oledPage + 1);
+  display.print("/");
+  display.print(OLED_PAGE_COUNT);
+
+  display.drawLine(
+    0,
+    11,
+    SCREEN_WIDTH - 1,
+    11,
+    SSD1306_WHITE
+  );
+}
+
+
+void oledPageDots() {
+
+  const int dotsWidth = OLED_PAGE_COUNT * 6 - 1;
+  const int startX = (SCREEN_WIDTH - dotsWidth) / 2;
+  const int dotY = 62;
+
+  for (int index = 0; index < OLED_PAGE_COUNT; index++) {
+    if (index == oledPage) {
+      display.fillRect(
+        startX + index * 6,
+        dotY,
+        5,
+        2,
+        SSD1306_WHITE
+      );
+    } else {
+      display.drawPixel(
+        startX + index * 6 + 2,
+        dotY,
+        SSD1306_WHITE
+      );
+    }
+  }
+}
+
+
+void showOLED() {
+
+  if (!oledDetected) {
+    return;
+  }
+
+  oledPageHeader();
+
+  display.drawRoundRect(
+    1,
+    15,
+    SCREEN_WIDTH - 2,
+    44,
+    3,
+    SSD1306_WHITE
+  );
+
+  if (oledPage == 0) {
+    oledCenteredText("SYSTEM STATUS", 19, 1);
+
+    if (systemMode == ALERT_MODE) {
+      oledCenteredText("ALERT", 27, 2);
+      oledCenteredText("CHECK PLANT", 47, 1);
+    } else {
+      oledCenteredText("NORMAL", 27, 2);
+      oledCenteredText("ALL SYSTEMS OK", 47, 1);
+    }
+  }
+
+  else if (oledPage == 1) {
+    oledCenteredText("SOIL MOISTURE", 19, 1);
+
+    if (soilState == SENSOR_NOT_FOUND || soilState == SENSOR_FAULT) {
+      oledCenteredText(
+        soilState == SENSOR_NOT_FOUND ? "N/A" : "ERROR",
+        28,
+        2
+      );
+    } else {
+      oledCenteredText(String(soilPercent, 1) + "%", 27, 2);
+      oledProgressBar(soilPercent, 100.0);
+    }
+
+    oledSensorFooter(soilState);
+  }
+
+  else if (oledPage == 2) {
+    oledCenteredText("AIR TEMPERATURE", 19, 1);
+
+    if (ahtState == SENSOR_NOT_FOUND || ahtState == SENSOR_FAULT) {
+      oledCenteredText(
+        ahtState == SENSOR_NOT_FOUND ? "N/A" : "ERROR",
+        28,
+        2
+      );
+    } else {
+      oledCenteredText(String(temperature, 1) + " C", 27, 2);
+    }
+
+    oledSensorFooter(ahtState);
+  }
+
+  else if (oledPage == 3) {
+    oledCenteredText("AIR HUMIDITY", 19, 1);
+
+    if (ahtState == SENSOR_NOT_FOUND || ahtState == SENSOR_FAULT) {
+      oledCenteredText(
+        ahtState == SENSOR_NOT_FOUND ? "N/A" : "ERROR",
+        28,
+        2
+      );
+    } else {
+      oledCenteredText(String(humidity, 1) + "%", 27, 2);
+      oledProgressBar(humidity, 100.0);
+    }
+
+    oledSensorFooter(ahtState);
+  }
+
+  else if (oledPage == 4) {
+    oledCenteredText("AMBIENT LIGHT", 19, 1);
+
+    if (lightState == SENSOR_NOT_FOUND || lightState == SENSOR_FAULT) {
+      oledCenteredText(
+        lightState == SENSOR_NOT_FOUND ? "N/A" : "ERROR",
+        28,
+        2
+      );
+    } else {
+      oledCenteredText(String(lightLux, 0) + " lux", 27, 2);
+      oledProgressBar(lightLux, 1000.0);
+    }
+
+    oledSensorFooter(lightState);
+  }
+
+  else {
+    oledCenteredText("WI-FI DASHBOARD", 19, 1);
+
+    if (wifiActive) {
+      oledCenteredText("ONLINE", 27, 2);
+      oledCenteredText("192.168.4.1", 47, 1);
+    } else {
+      oledCenteredText("OFFLINE", 27, 2);
+      oledCenteredText("PRESS BUTTON", 47, 1);
+    }
+  }
+
+  oledPageDots();
+
+  if (oledTransitionActive) {
+    unsigned long transitionElapsed =
+      millis() - oledTransitionStart;
+
+    if (transitionElapsed >= OLED_TRANSITION_TIME) {
+      oledTransitionActive = false;
+    } else {
+      float transitionProgress =
+        (float)transitionElapsed /
+        OLED_TRANSITION_TIME;
+
+      float easedProgress =
+        1.0 -
+        (
+          (1.0 - transitionProgress) *
+          (1.0 - transitionProgress) *
+          (1.0 - transitionProgress)
+        );
+
+      int incomingWidth =
+        (int)(easedProgress * SCREEN_WIDTH);
+
+      int splitX = SCREEN_WIDTH - incomingWidth;
+
+      uint8_t* currentFrame = display.getBuffer();
+
+      for (
+        int row = 0;
+        row < SCREEN_HEIGHT / 8;
+        row++
+      ) {
+        for (
+          int column = 0;
+          column < SCREEN_WIDTH;
+          column++
+        ) {
+          if (column < splitX) {
+            int byteIndex =
+              row * SCREEN_WIDTH + column;
+
+            currentFrame[byteIndex] =
+              oledOutgoingFrame[byteIndex];
+          }
+        }
+      }
+
+      display.drawLine(
+        splitX,
+        12,
+        splitX,
+        SCREEN_HEIGHT - 1,
+        SSD1306_WHITE
+      );
+    }
+  }
+
   display.display();
 }
 
@@ -2182,14 +2551,25 @@ void showOLED() {
 
 void oledTask() {
 
+  unsigned long now = millis();
+  bool pageChanged = false;
+
   if (
-    millis() -
+    now -
     oledLastChange >=
     OLED_SLIDE_TIME
   ) {
 
     oledLastChange =
-      millis();
+      now;
+
+    if (oledDetected) {
+      memcpy(
+        oledOutgoingFrame,
+        display.getBuffer(),
+        sizeof(oledOutgoingFrame)
+      );
+    }
 
 
     oledPage++;
@@ -2203,6 +2583,22 @@ void oledTask() {
       oledPage = 0;
     }
 
+
+    oledTransitionStart = now;
+    oledTransitionActive = true;
+    pageChanged = true;
+  }
+
+
+  if (
+    pageChanged ||
+    (
+      oledTransitionActive &&
+      now - oledLastFrame >= OLED_FRAME_TIME
+    )
+  ) {
+
+    oledLastFrame = now;
 
     showOLED();
   }
