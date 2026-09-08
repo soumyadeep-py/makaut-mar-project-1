@@ -259,8 +259,18 @@ unsigned long lastButtonChange = 0;
 unsigned long oledButtonChange[4] = {0, 0, 0, 0};
 
 const unsigned long DEBOUNCE_TIME = 50UL;
+const unsigned long OLED_MANUAL_OVERRIDE_TIME = 600000UL;
+
+const uint8_t OLED_MIN_CONTRAST = 20;
+const uint8_t OLED_MAX_CONTRAST = 255;
+const float OLED_BRIGHTNESS_REFERENCE_LUX = 65535.0;
 
 uint8_t oledContrast = 128;
+unsigned long oledManualOverrideStart = 0;
+bool oledManualOverrideActive = false;
+
+void setOLEDContrast();
+void updateAutomaticOLEDContrast();
 
 
 // ============================================================
@@ -600,6 +610,8 @@ void readBH1750() {
   lightLux = lux;
 
   lightState = SENSOR_ACTIVE;
+
+  updateAutomaticOLEDContrast();
 
 
   Serial.print(
@@ -1349,6 +1361,46 @@ void setOLEDContrast() {
 }
 
 
+void updateAutomaticOLEDContrast() {
+
+  if (oledManualOverrideActive) {
+    if (
+      millis() - oledManualOverrideStart <
+      OLED_MANUAL_OVERRIDE_TIME
+    ) {
+      return;
+    }
+
+    oledManualOverrideActive = false;
+  }
+
+  float brightnessPercent =
+    constrain(
+      lightLux / OLED_BRIGHTNESS_REFERENCE_LUX * 100.0,
+      0.0,
+      100.0
+    );
+
+  oledContrast =
+    (uint8_t)map(
+      (long)brightnessPercent,
+      0,
+      100,
+      OLED_MIN_CONTRAST,
+      OLED_MAX_CONTRAST
+    );
+
+  setOLEDContrast();
+}
+
+
+void startOLEDManualOverride() {
+
+  oledManualOverrideActive = true;
+  oledManualOverrideStart = millis();
+}
+
+
 void checkOLEDButton() {
 
   const int buttonPins[4] = {
@@ -1381,11 +1433,19 @@ void checkOLEDButton() {
           changeOLEDPage(-1);
         } else if (index == 1) {
           changeOLEDPage(1);
-        } else if (index == 2 && oledContrast <= 245) {
-          oledContrast += 40;
+        } else if (index == 2) {
+          oledContrast = min(
+            (int)OLED_MAX_CONTRAST,
+            (int)oledContrast + 40
+          );
+          startOLEDManualOverride();
           setOLEDContrast();
-        } else if (index == 3 && oledContrast >= 10) {
-          oledContrast -= 40;
+        } else if (index == 3) {
+          oledContrast = max(
+            (int)OLED_MIN_CONTRAST,
+            (int)oledContrast - 40
+          );
+          startOLEDManualOverride();
           setOLEDContrast();
         }
 
@@ -2567,8 +2627,18 @@ void showOLED() {
         2
       );
     } else {
-      oledCenteredText(String(lightLux, 0) + " lux", 27, 2);
-      oledProgressBar(lightLux, 1000.0);
+      float lightPercent = constrain(
+        lightLux / OLED_BRIGHTNESS_REFERENCE_LUX * 100.0,
+        0.0,
+        100.0
+      );
+
+      oledCenteredText(
+        String(lightLux, 0) + " lux  " + String(lightPercent, 0) + "%",
+        27,
+        1
+      );
+      oledProgressBar(lightPercent, 100.0);
     }
 
     oledSensorFooter(lightState);
@@ -2959,6 +3029,10 @@ void setup() {
     Serial.println(
       "BH1750 NOT FOUND."
     );
+  }
+
+  if (bhDetected) {
+    readBH1750();
   }
 
 
