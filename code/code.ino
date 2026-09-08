@@ -233,6 +233,7 @@ int oledPage = 0;
 const int OLED_PAGE_COUNT = 6;
 
 bool oledTransitionActive = false;
+bool oledTransitionFromLeft = false;
 
 uint8_t oledOutgoingFrame[
   SCREEN_WIDTH * SCREEN_HEIGHT / 8
@@ -1332,6 +1333,7 @@ void changeOLEDPage(int direction) {
   }
 
   oledTransitionStart = now;
+  oledTransitionFromLeft = direction < 0;
   oledTransitionActive = true;
 }
 
@@ -2608,7 +2610,9 @@ void showOLED() {
       int incomingWidth =
         (int)(easedProgress * SCREEN_WIDTH);
 
-      int splitX = SCREEN_WIDTH - incomingWidth;
+      int splitX = oledTransitionFromLeft
+        ? incomingWidth
+        : SCREEN_WIDTH - incomingWidth;
 
       uint8_t* currentFrame = display.getBuffer();
 
@@ -2622,7 +2626,10 @@ void showOLED() {
           column < SCREEN_WIDTH;
           column++
         ) {
-          if (column < splitX) {
+          if (
+            (oledTransitionFromLeft && column >= splitX) ||
+            (!oledTransitionFromLeft && column < splitX)
+          ) {
             int byteIndex =
               row * SCREEN_WIDTH + column;
 
