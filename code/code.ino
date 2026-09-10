@@ -98,6 +98,10 @@ enum SensorState {
   SENSOR_FAULT
 };
 
+extern SensorState soilState;
+extern SensorState ahtState;
+extern SensorState lightState;
+
 
 // ============================================================
 //                     SYSTEM MODES
@@ -108,7 +112,25 @@ enum SystemMode {
   ALERT_MODE
 };
 
+enum StartupPhase {
+  STARTUP_BOOT,
+  STARTUP_SENSOR_CHECK,
+  STARTUP_READY
+};
+
 SystemMode systemMode = NORMAL_MODE;
+StartupPhase startupPhase = STARTUP_BOOT;
+
+bool startupSensorCheckPassed = false;
+unsigned long startupCheckLastAttempt = 0;
+unsigned long startupWarningLastBeep = 0;
+unsigned long startupResultDisplayUntil = 0;
+unsigned long sensorRecoveryLastAttempt = 0;
+
+const unsigned long STARTUP_SENSOR_CHECK_INTERVAL = 1000UL;
+const unsigned long STARTUP_WARNING_REPEAT_TIME = 1500UL;
+const unsigned long STARTUP_RESULT_DISPLAY_TIME = 2000UL;
+const unsigned long SENSOR_RECOVERY_INTERVAL = 1000UL;
 
 
 // ============================================================
@@ -310,24 +332,82 @@ void setRGB(
 
   digitalWrite(
     RGB_R_PIN,
-    red ? HIGH : LOW
+    red ? LOW : HIGH
   );
 
   digitalWrite(
     RGB_G_PIN,
-    green ? HIGH : LOW
+    green ? LOW : HIGH
   );
 
   digitalWrite(
     RGB_B_PIN,
-    blue ? HIGH : LOW
+    blue ? LOW : HIGH
   );
+}
+
+
+bool hasSensorProblem() {
+
+  return
+    soilState == SENSOR_NOT_FOUND ||
+    soilState == SENSOR_FAULT ||
+    !ahtDetected ||
+    ahtState == SENSOR_NOT_FOUND ||
+    ahtState == SENSOR_FAULT ||
+    !bhDetected ||
+    lightState == SENSOR_NOT_FOUND ||
+    lightState == SENSOR_FAULT;
+}
+
+
+bool allSensorsHealthy() {
+
+  bool soilOk =
+    soilState != SENSOR_NOT_FOUND &&
+    soilState != SENSOR_FAULT &&
+    !isnan(soilPercent);
+
+  bool ahtOk =
+    ahtDetected &&
+    ahtState != SENSOR_NOT_FOUND &&
+    ahtState != SENSOR_FAULT &&
+    !isnan(temperature) &&
+    !isnan(humidity);
+
+  bool lightOk =
+    bhDetected &&
+    lightState != SENSOR_NOT_FOUND &&
+    lightState != SENSOR_FAULT &&
+    !isnan(lightLux);
+
+  return soilOk && ahtOk && lightOk;
 }
 
 
 void updateRGB() {
 
-  // RED = alert
+  // Startup validation has priority before normal operation
+  if (startupPhase == STARTUP_SENSOR_CHECK) {
+
+    if (startupSensorCheckPassed) {
+      setRGB(false, true, false);
+    } else {
+      setRGB(false, false, true);
+    }
+
+    return;
+  }
+
+
+  // A connection problem takes priority over threshold alerts.
+  if (hasSensorProblem()) {
+    setRGB(false, false, true);
+    return;
+  }
+
+
+  // ALERT always takes priority: red means something is wrong
   if (systemMode == ALERT_MODE) {
 
     setRGB(true, false, false);
@@ -336,17 +416,89 @@ void updateRGB() {
   }
 
 
-  // BLUE = Wi-Fi ON
-  if (wifiActive) {
+  // GREEN only when every required sensor is connected
+  // and each one is returning a valid reading.
+  if (allSensorsHealthy()) {
 
-    setRGB(false, false, true);
+    setRGB(false, true, false);
 
     return;
   }
 
 
-  // GREEN = normal and Wi-Fi OFF
-  setRGB(false, true, false);
+  // Blue means a sensor needs attention. Red remains reserved for plant alerts.
+  setRGB(false, false, true);
+}
+
+
+void startupSensorCheckTask() {
+
+  if (startupPhase != STARTUP_SENSOR_CHECK)
+    return;
+
+
+  if (
+    millis() - startupCheckLastAttempt <
+    STARTUP_SENSOR_CHECK_INTERVAL
+  ) {
+    return;
+  }
+
+  startupCheckLastAttempt = millis();
+
+  // Retry I2C initialisation too, so a sensor plugged in during boot is found.
+  sensorRecoveryLastAttempt = millis() - SENSOR_RECOVERY_INTERVAL;
+  sensorRecoveryTask();
+
+  readSoil();
+  readAHT();
+  readBH1750();
+
+  bool soilOk =
+    soilState == SENSOR_ACTIVE &&
+    !isnan(soilPercent);
+
+  bool ahtOk =
+    ahtDetected &&
+    ahtState == SENSOR_ACTIVE &&
+    !isnan(temperature) &&
+    !isnan(humidity);
+
+  bool lightOk =
+    bhDetected &&
+    lightState == SENSOR_ACTIVE &&
+    !isnan(lightLux);
+
+  startupSensorCheckPassed =
+    soilOk && ahtOk && lightOk;
+
+  if (startupSensorCheckPassed) {
+
+    startupResultDisplayUntil = millis() + STARTUP_RESULT_DISPLAY_TIME;
+
+    startupPhase = STARTUP_READY;
+
+    startupHappyBeep();
+
+    Serial.println();
+    Serial.println("All sensors OK. Starting normal monitoring.");
+
+    startWiFiAP();
+
+    return;
+  }
+
+
+  Serial.println();
+  Serial.println("Sensor check failed. Check sensor connection.");
+
+  if (
+    millis() - startupWarningLastBeep >=
+    STARTUP_WARNING_REPEAT_TIME
+  ) {
+    startupWarningLastBeep = millis();
+    startBeep();
+  }
 }
 
 
@@ -414,6 +566,20 @@ void startupBeep() {
   noTone(
     BUZZER_PIN
   );
+}
+
+
+// A short rising three-note confirmation for a successful sensor check.
+void startupHappyBeep() {
+
+  const int notes[] = { 1600, 2100, 2800 };
+
+  for (int index = 0; index < 3; index++) {
+    tone(BUZZER_PIN, notes[index]);
+    delay(90);
+    noTone(BUZZER_PIN);
+    delay(45);
+  }
 }
 
 
@@ -502,15 +668,25 @@ void readSoil() {
 SensorState ahtState = SENSOR_NOT_FOUND;
 
 
+bool i2cDevicePresent(uint8_t address) {
+
+  Wire.beginTransmission(address);
+  return Wire.endTransmission() == 0;
+}
+
+
 // ------------------------------------------------------------
 // Read AHT21B
 // ------------------------------------------------------------
 
 void readAHT() {
 
-  if (!ahtDetected) {
+  if (!ahtDetected || !i2cDevicePresent(0x38)) {
 
     ahtState = SENSOR_NOT_FOUND;
+    ahtDetected = false;
+    temperature = NAN;
+    humidity = NAN;
 
     return;
   }
@@ -539,6 +715,9 @@ void readAHT() {
   ) {
 
     ahtState = SENSOR_FAULT;
+    ahtDetected = false;
+    temperature = NAN;
+    humidity = NAN;
 
     return;
   }
@@ -585,9 +764,11 @@ SensorState lightState = SENSOR_NOT_FOUND;
 
 void readBH1750() {
 
-  if (!bhDetected) {
+  if (!bhDetected || !i2cDevicePresent(0x23)) {
 
     lightState = SENSOR_NOT_FOUND;
+    bhDetected = false;
+    lightLux = NAN;
 
     return;
   }
@@ -600,6 +781,7 @@ void readBH1750() {
   if (lux < 0) {
 
     lightState = SENSOR_FAULT;
+    bhDetected = false;
 
     lightLux = NAN;
 
@@ -624,6 +806,45 @@ void readBH1750() {
   );
 
   Serial.println(" lux");
+}
+
+
+// Re-initialise a disconnected I2C sensor and re-test a bad soil reading.
+// This lets the monitor automatically return to normal as soon as it is fixed.
+void sensorRecoveryTask() {
+
+  if (millis() - sensorRecoveryLastAttempt < SENSOR_RECOVERY_INTERVAL) {
+    return;
+  }
+
+  sensorRecoveryLastAttempt = millis();
+
+  if (!ahtDetected || ahtState == SENSOR_NOT_FOUND || ahtState == SENSOR_FAULT) {
+    if (aht.begin(&Wire)) {
+      ahtDetected = true;
+      readAHT();
+    } else {
+      ahtDetected = false;
+      ahtState = SENSOR_NOT_FOUND;
+      temperature = NAN;
+      humidity = NAN;
+    }
+  }
+
+  if (!bhDetected || lightState == SENSOR_NOT_FOUND || lightState == SENSOR_FAULT) {
+    if (bh1750.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
+      bhDetected = true;
+      readBH1750();
+    } else {
+      bhDetected = false;
+      lightState = SENSOR_NOT_FOUND;
+      lightLux = NAN;
+    }
+  }
+
+  if (soilState == SENSOR_NOT_FOUND || soilState == SENSOR_FAULT) {
+    readSoil();
+  }
 }
 
 
@@ -2538,9 +2759,48 @@ void oledPageDots() {
 }
 
 
+void oledSensorCheckScreen(bool allFound) {
+
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(3, 1);
+  display.print("SMART PLANT");
+  display.drawLine(0, 11, SCREEN_WIDTH - 1, 11, SSD1306_WHITE);
+
+  oledCenteredText(allFound ? "ALL SENSORS FOUND" : "CHECK SENSOR", 16, 1);
+  display.drawRoundRect(1, 27, SCREEN_WIDTH - 2, 31, 3, SSD1306_WHITE);
+
+  display.setCursor(8, 31);
+  display.print(soilState == SENSOR_ACTIVE || soilState == SENSOR_RESTING ? "+ SOIL" : "! SOIL MISSING");
+
+  display.setCursor(8, 40);
+  display.print(ahtDetected && ahtState != SENSOR_FAULT ? "+ AHT21B" : "! AHT21B MISSING");
+
+  display.setCursor(8, 49);
+  display.print(bhDetected && lightState != SENSOR_FAULT ? "+ BH1750" : "! BH1750 MISSING");
+
+  display.display();
+}
+
+
 void showOLED() {
 
   if (!oledDetected) {
+    return;
+  }
+
+  if (
+    startupPhase != STARTUP_READY ||
+    millis() < startupResultDisplayUntil
+  ) {
+    oledSensorCheckScreen(startupSensorCheckPassed);
+    return;
+  }
+
+  // Never leave a stale environmental reading on-screen after a sensor drops.
+  if (hasSensorProblem()) {
+    oledSensorCheckScreen(false);
     return;
   }
 
@@ -2744,6 +3004,9 @@ void oledTask() {
 
 
   if (
+    startupPhase != STARTUP_READY ||
+    millis() < startupResultDisplayUntil ||
+    hasSensorProblem() ||
     pageChanged ||
     (
       oledTransitionActive &&
@@ -3071,10 +3334,14 @@ void setup() {
   wifiActive = false;
 
 
-  // IMPORTANT:
-  // Wi-Fi starts immediately at boot.
+  // ==========================================================
+  // SENSOR STARTUP CHECK
+  // ==========================================================
 
-  startWiFiAP();
+  startupPhase = STARTUP_SENSOR_CHECK;
+  startupSensorCheckPassed = false;
+  startupCheckLastAttempt = 0;
+  startupWarningLastBeep = 0;
 
 
   // ==========================================================
@@ -3128,6 +3395,24 @@ void loop() {
   checkOLEDButton();
 
 
+  if (startupPhase == STARTUP_SENSOR_CHECK) {
+    startupSensorCheckTask();
+    updateBuzzer();
+    oledTask();
+    updateRGB();
+    return;
+  }
+
+  if (startupPhase == STARTUP_READY) {
+    if (millis() < startupResultDisplayUntil) {
+      updateBuzzer();
+      oledTask();
+      updateRGB();
+      return;
+    }
+  }
+
+
   // Wi-Fi
   wifiTask();
 
@@ -3137,6 +3422,8 @@ void loop() {
 
 
   // Sensors
+  sensorRecoveryTask();
+
   if (
     systemMode ==
     NORMAL_MODE
