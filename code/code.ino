@@ -170,6 +170,10 @@ unsigned long lastSensorRead   = 0;
 
 float soilPercent = NAN;
 
+float rawTemperature = NAN;
+float rawHumidity    = NAN;
+float rawLightLux    = NAN;
+
 float temperature = NAN;
 float humidity    = NAN;
 
@@ -207,14 +211,14 @@ const float SOIL_PERCENT_OFFSET = 0.0;
 // Compare with a trusted reference before changing these values.
 //
 // AHT21B temperature and humidity correction.
-const float TEMP_SCALE = 1.0;
-const float TEMP_OFFSET = 0.0;
-const float HUMIDITY_SCALE = 1.0;
-const float HUMIDITY_OFFSET = 0.0;
+float tempScale = 1.0;
+float tempOffset = 0.0;
+float humidityScale = 1.0;
+float humidityOffset = 0.0;
 
 // BH1750 light correction.
-const float LIGHT_SCALE = 1.0;
-const float LIGHT_OFFSET = 0.0;
+float lightScale = 1.0;
+float lightOffset = 0.0;
 
 
 // ============================================================
@@ -302,6 +306,13 @@ bool slideshowRunning = true;
 //                    SOIL CALIBRATION APP
 // ============================================================
 
+enum CalibrationTarget {
+  CAL_TARGET_SOIL,
+  CAL_TARGET_TEMP,
+  CAL_TARGET_HUMIDITY,
+  CAL_TARGET_LIGHT
+};
+
 enum CalibrationState {
   CAL_PROMPT_MIN,
   CAL_SAMPLING_MIN,
@@ -309,14 +320,46 @@ enum CalibrationState {
   CAL_PROMPT_MAX,
   CAL_SAMPLING_MAX,
   CAL_EDIT_MAX,
+  CAL_PROMPT_REF,
+  CAL_SAMPLING_REF,
+  CAL_EDIT_REF,
   CAL_SAVED
 };
 
+CalibrationTarget calibrationTarget = CAL_TARGET_SOIL;
 CalibrationState calibrationState = CAL_PROMPT_MIN;
 float calibrationSamples[3] = {0.0, 0.0, 0.0};
+float calibrationSampleAverage = 0.0;
 uint8_t calibrationSampleCount = 0;
 unsigned long calibrationLastSample = 0;
 float calibrationEditValue = 0.0;
+
+bool calibrationWorkflowActive() {
+  return
+    calibrationState == CAL_PROMPT_MIN ||
+    calibrationState == CAL_SAMPLING_MIN ||
+    calibrationState == CAL_EDIT_MIN ||
+    calibrationState == CAL_PROMPT_MAX ||
+    calibrationState == CAL_SAMPLING_MAX ||
+    calibrationState == CAL_EDIT_MAX ||
+    calibrationState == CAL_PROMPT_REF ||
+    calibrationState == CAL_SAMPLING_REF ||
+    calibrationState == CAL_EDIT_REF ||
+    calibrationState == CAL_SAVED;
+}
+
+void cancelCalibration() {
+  calibrationState = CAL_PROMPT_MIN;
+  calibrationTarget = CAL_TARGET_SOIL;
+  calibrationSampleCount = 0;
+  calibrationLastSample = 0;
+  calibrationEditValue = 0.0;
+  calibrationSampleAverage = 0.0;
+  oledPage = 0;
+  slideshowRunning = true;
+  oledLastChange = millis();
+  startTone(600, 80UL);
+}
 
 const unsigned long CALIBRATION_SAMPLE_INTERVAL = 1000UL;
 
@@ -734,6 +777,27 @@ float calibrationStep(float value) {
 }
 
 
+const char* calibrationTargetName(CalibrationTarget target) {
+  switch (target) {
+    case CAL_TARGET_SOIL:
+      return "SOIL";
+    case CAL_TARGET_TEMP:
+      return "TEMP";
+    case CAL_TARGET_HUMIDITY:
+      return "HUM";
+    case CAL_TARGET_LIGHT:
+      return "LIGHT";
+    default:
+      return "SENSOR";
+  }
+}
+
+
+void saveCalibrationValue(const char* key, float value) {
+  calibrationPreferences.putFloat(key, value);
+}
+
+
 void startCalibrationSampling(bool minimum) {
 
   calibrationSampleCount = 0;
@@ -743,11 +807,21 @@ void startCalibrationSampling(bool minimum) {
 }
 
 
+void startCalibrationReferenceSampling() {
+
+  calibrationSampleCount = 0;
+  calibrationLastSample = 0;
+  calibrationState = CAL_SAMPLING_REF;
+  startTone(1700, 70UL);
+}
+
+
 void calibrationTask() {
 
   if (
     calibrationState != CAL_SAMPLING_MIN &&
-    calibrationState != CAL_SAMPLING_MAX
+    calibrationState != CAL_SAMPLING_MAX &&
+    calibrationState != CAL_SAMPLING_REF
   ) {
     return;
   }
@@ -761,9 +835,23 @@ void calibrationTask() {
 
   calibrationLastSample = millis();
 
-  int raw = analogRead(SOIL_PIN);
+  float raw = 0.0;
+  if (calibrationTarget == CAL_TARGET_SOIL) {
+    raw = analogRead(SOIL_PIN);
+  } else if (calibrationTarget == CAL_TARGET_TEMP) {
+    raw = rawTemperature;
+  } else if (calibrationTarget == CAL_TARGET_HUMIDITY) {
+    raw = rawHumidity;
+  } else if (calibrationTarget == CAL_TARGET_LIGHT) {
+    raw = rawLightLux;
+  }
 
-  if (raw < 20 || raw > 4080) {
+  if (isnan(raw) || raw < 0.0) {
+    startTone(500, 100UL);
+    return;
+  }
+
+  if (calibrationTarget == CAL_TARGET_SOIL && (raw < 20 || raw > 4080)) {
     startTone(500, 100UL);
     return;
   }
@@ -775,41 +863,93 @@ void calibrationTask() {
     return;
   }
 
-  calibrationEditValue =
-    (calibrationSamples[0] + calibrationSamples[1] + calibrationSamples[2]) /
-    3.0;
+  calibrationSampleAverage =
+    (calibrationSamples[0] + calibrationSamples[1] + calibrationSamples[2]) / 3.0;
 
   bool minimum = calibrationState == CAL_SAMPLING_MIN;
-  calibrationState = minimum ? CAL_EDIT_MIN : CAL_EDIT_MAX;
+  if (calibrationState == CAL_SAMPLING_REF) {
+    calibrationEditValue = calibrationSampleAverage;
+    calibrationState = CAL_EDIT_REF;
+  } else {
+    calibrationState = minimum ? CAL_EDIT_MIN : CAL_EDIT_MAX;
+  }
   startTone(2400, 120UL);
+}
+
+
+void advanceCalibrationTarget(int direction) {
+
+  int nextTarget = (int)calibrationTarget + direction;
+
+  if (nextTarget < CAL_TARGET_SOIL) {
+    nextTarget = CAL_TARGET_LIGHT;
+  }
+
+  if (nextTarget > CAL_TARGET_LIGHT) {
+    nextTarget = CAL_TARGET_SOIL;
+  }
+
+  calibrationTarget = (CalibrationTarget)nextTarget;
+  calibrationState = calibrationTarget == CAL_TARGET_SOIL ? CAL_PROMPT_MIN : CAL_PROMPT_REF;
+  calibrationSampleCount = 0;
+  calibrationLastSample = 0;
+  calibrationEditValue = 0.0;
+  startTone(1800, 60UL);
 }
 
 
 void handleCalibrationSelect() {
 
-  // Calibration must stay on-screen while the user follows the prompts.
   slideshowRunning = false;
 
-  if (calibrationState == CAL_PROMPT_MIN) {
-    startCalibrationSampling(true);
-  } else if (calibrationState == CAL_EDIT_MIN) {
-    soilDryRaw = calibrationEditValue;
-    calibrationState = CAL_PROMPT_MAX;
-    startTone(2100, 80UL);
-  } else if (calibrationState == CAL_PROMPT_MAX) {
-    startCalibrationSampling(false);
-  } else if (calibrationState == CAL_EDIT_MAX) {
-    if (fabs(calibrationEditValue - soilDryRaw) >= 20.0) {
-      soilWetRaw = calibrationEditValue;
+  if (calibrationTarget == CAL_TARGET_SOIL) {
+    if (calibrationState == CAL_PROMPT_MIN) {
+      startCalibrationSampling(true);
+    } else if (calibrationState == CAL_EDIT_MIN) {
+      soilDryRaw = calibrationEditValue;
       calibrationPreferences.putFloat("soilDry", soilDryRaw);
-      calibrationPreferences.putFloat("soilWet", soilWetRaw);
-      calibrationState = CAL_SAVED;
-      startTone(2700, 140UL);
-    } else {
-      startTone(450, 150UL);
+      calibrationState = CAL_PROMPT_MAX;
+      startTone(2100, 80UL);
+    } else if (calibrationState == CAL_PROMPT_MAX) {
+      startCalibrationSampling(false);
+    } else if (calibrationState == CAL_EDIT_MAX) {
+      if (fabs(calibrationEditValue - soilDryRaw) >= 20.0) {
+        soilWetRaw = calibrationEditValue;
+        calibrationPreferences.putFloat("soilWet", soilWetRaw);
+        calibrationState = CAL_SAVED;
+        startTone(2700, 140UL);
+      } else {
+        startTone(450, 150UL);
+      }
+    } else if (calibrationState == CAL_SAVED) {
+      calibrationState = CAL_PROMPT_MIN;
     }
+    return;
+  }
+
+  if (calibrationState == CAL_PROMPT_REF) {
+    startCalibrationReferenceSampling();
+  } else if (calibrationState == CAL_EDIT_REF) {
+    float actualValue = 0.0;
+
+    if (calibrationTarget == CAL_TARGET_TEMP) {
+      actualValue = rawTemperature;
+      tempOffset = calibrationEditValue - actualValue;
+      saveCalibrationValue("tempOffset", tempOffset);
+    } else if (calibrationTarget == CAL_TARGET_HUMIDITY) {
+      actualValue = rawHumidity;
+      humidityOffset = calibrationEditValue - actualValue;
+      saveCalibrationValue("humidityOffset", humidityOffset);
+    } else if (calibrationTarget == CAL_TARGET_LIGHT) {
+      actualValue = rawLightLux;
+      lightOffset = calibrationEditValue - actualValue;
+      saveCalibrationValue("lightOffset", lightOffset);
+    }
+
+    calibrationState = CAL_SAVED;
+    startTone(2700, 140UL);
   } else if (calibrationState == CAL_SAVED) {
-    calibrationState = CAL_PROMPT_MIN;
+    calibrationState = CAL_PROMPT_REF;
   }
 }
 
@@ -818,8 +958,15 @@ void adjustCalibrationValue(int direction) {
 
   if (
     calibrationState != CAL_EDIT_MIN &&
-    calibrationState != CAL_EDIT_MAX
+    calibrationState != CAL_EDIT_MAX &&
+    calibrationState != CAL_EDIT_REF
   ) {
+    return;
+  }
+
+  if (calibrationState == CAL_EDIT_REF) {
+    calibrationEditValue += direction * 0.5;
+    calibrationEditValue = constrain(calibrationEditValue, -200.0, 2000.0);
     return;
   }
 
@@ -869,14 +1016,14 @@ void readAHT() {
   );
 
 
-  temperature =
+  rawTemperature =
     temperatureEvent.temperature;
 
-  humidity =
+  rawHumidity =
     humidityEvent.relative_humidity;
 
-  temperature = temperature * TEMP_SCALE + TEMP_OFFSET;
-  humidity = humidity * HUMIDITY_SCALE + HUMIDITY_OFFSET;
+  temperature = rawTemperature * tempScale + tempOffset;
+  humidity = rawHumidity * humidityScale + humidityOffset;
 
 
   if (
@@ -959,7 +1106,8 @@ void readBH1750() {
   }
 
 
-  lightLux = lux * LIGHT_SCALE + LIGHT_OFFSET;
+  rawLightLux = lux;
+  lightLux = rawLightLux * lightScale + lightOffset;
 
   lightState = SENSOR_ACTIVE;
 
@@ -1844,25 +1992,34 @@ void checkOLEDButton() {
       if (stableState[index] == LOW) {
         startButtonClick();
 
-        if (index == 0) {
-          changeOLEDPage(-1);
-        } else if (index == 1) {
-          changeOLEDPage(1);
-        } else if (index == 2) {
-          if (oledPage == 6) {
+        bool upPressed = digitalRead(OLED_UP_PIN) == LOW;
+        bool downPressed = digitalRead(OLED_DOWN_PIN) == LOW;
+
+        if (calibrationWorkflowActive() && upPressed && downPressed) {
+          cancelCalibration();
+        } else if (oledPage == 6) {
+          if (index == 0) {
+            advanceCalibrationTarget(-1);
+          } else if (index == 1) {
+            advanceCalibrationTarget(1);
+          } else if (index == 2) {
             adjustCalibrationValue(1);
-          } else {
+          } else if (index == 3) {
+            adjustCalibrationValue(-1);
+          }
+        } else {
+          if (index == 0) {
+            changeOLEDPage(-1);
+          } else if (index == 1) {
+            changeOLEDPage(1);
+          } else if (index == 2) {
             oledContrast = min(
               (int)OLED_MAX_CONTRAST,
               (int)oledContrast + 40
             );
             startOLEDManualOverride();
             setOLEDContrast();
-          }
-        } else if (index == 3) {
-          if (oledPage == 6) {
-            adjustCalibrationValue(-1);
-          } else {
+          } else if (index == 3) {
             oledContrast = max(
               (int)OLED_MIN_CONTRAST,
               (int)oledContrast - 40
@@ -3049,45 +3206,69 @@ void oledAppTitle() {
 void showCalibrationApp() {
 
   if (calibrationState == CAL_PROMPT_MIN) {
-    oledCenteredText("SOIL MIN / DRY", 25, 1);
-    oledCenteredText("SELECT TO START", 38, 1);
-    oledCenteredText("3 READINGS / 1 SEC", 49, 1);
+    oledCenteredText(String(calibrationTargetName(calibrationTarget)) + " MIN / LOW", 22, 1);
+    oledCenteredText("SELECT TO START", 35, 1);
+    oledCenteredText("3 READINGS / 1 SEC", 46, 1);
   } else if (calibrationState == CAL_SAMPLING_MIN) {
-    oledCenteredText("MIN: MEASURING", 25, 1);
+    oledCenteredText("MIN: MEASURING", 22, 1);
     oledCenteredText(
       String(calibrationSampleCount + 1) + " / 3",
-      34,
+      31,
       2
     );
-    oledCenteredText("KEEP PROBE DRY", 50, 1);
+    oledCenteredText(calibrationTarget == CAL_TARGET_SOIL ? "KEEP PROBE DRY" : "SET LOW REFERENCE", 50, 1);
   } else if (calibrationState == CAL_EDIT_MIN) {
-    oledCenteredText("MIN AVERAGE", 24, 1);
+    oledCenteredText("MIN VALUE", 22, 1);
     oledCenteredText(
       String(calibrationEditValue, calibrationStep(calibrationEditValue) < 1.0 ? 1 : 0),
-      34,
+      31,
       2
     );
     oledCenteredText("UP/DOWN  SELECT OK", 50, 1);
   } else if (calibrationState == CAL_PROMPT_MAX) {
-    oledCenteredText("SOIL MAX / WET", 25, 1);
-    oledCenteredText("SELECT TO START", 38, 1);
-    oledCenteredText("3 READINGS / 1 SEC", 49, 1);
+    oledCenteredText(String(calibrationTargetName(calibrationTarget)) + " MAX / HIGH", 22, 1);
+    oledCenteredText("SELECT TO START", 35, 1);
+    oledCenteredText("3 READINGS / 1 SEC", 46, 1);
   } else if (calibrationState == CAL_SAMPLING_MAX) {
-    oledCenteredText("MAX: MEASURING", 25, 1);
+    oledCenteredText("MAX: MEASURING", 22, 1);
     oledCenteredText(
       String(calibrationSampleCount + 1) + " / 3",
-      34,
+      31,
       2
     );
-    oledCenteredText("KEEP PROBE WET", 50, 1);
+    oledCenteredText(calibrationTarget == CAL_TARGET_SOIL ? "KEEP PROBE WET" : "SET HIGH REFERENCE", 50, 1);
   } else if (calibrationState == CAL_EDIT_MAX) {
-    oledCenteredText("MAX AVERAGE", 24, 1);
+    oledCenteredText("MAX VALUE", 22, 1);
     oledCenteredText(
       String(calibrationEditValue, calibrationStep(calibrationEditValue) < 1.0 ? 1 : 0),
-      34,
+      31,
       2
     );
     oledCenteredText("UP/DOWN  SELECT OK", 50, 1);
+  } else if (calibrationState == CAL_PROMPT_REF) {
+    oledCenteredText(String(calibrationTargetName(calibrationTarget)) + " REF", 22, 1);
+    oledCenteredText("SELECT TO START", 35, 1);
+    oledCenteredText("3 READINGS / 1 SEC", 46, 1);
+  } else if (calibrationState == CAL_SAMPLING_REF) {
+    oledCenteredText("REF: MEASURING", 22, 1);
+    oledCenteredText(
+      String(calibrationSampleCount + 1) + " / 3",
+      31,
+      2
+    );
+    oledCenteredText("USE KNOWN STANDARD", 50, 1);
+  } else if (calibrationState == CAL_EDIT_REF) {
+    oledCenteredText("REFERENCE", 22, 1);
+    oledCenteredText(
+      String(calibrationEditValue, 1),
+      31,
+      2
+    );
+    oledCenteredText("UP/DOWN  SELECT OK", 50, 1);
+  } else if (calibrationState == CAL_SAVED) {
+    oledCenteredText("CALIBRATION SAVED", 20, 1);
+    oledCenteredText(String(calibrationTargetName(calibrationTarget)) + " OK", 34, 2);
+    oledCenteredText("SELECT FOR NEXT", 50, 1);
   } else {
     oledCenteredText("CALIBRATION SAVED", 25, 1);
     oledCenteredText(String("DRY ") + String(soilDryRaw, 0), 38, 1);
@@ -3398,6 +3579,9 @@ void setup() {
   calibrationPreferences.begin("plant-cal", false);
   soilDryRaw = calibrationPreferences.getFloat("soilDry", soilDryRaw);
   soilWetRaw = calibrationPreferences.getFloat("soilWet", soilWetRaw);
+  tempOffset = calibrationPreferences.getFloat("tempOffset", tempOffset);
+  humidityOffset = calibrationPreferences.getFloat("humidityOffset", humidityOffset);
+  lightOffset = calibrationPreferences.getFloat("lightOffset", lightOffset);
 
 
   Serial.println();
