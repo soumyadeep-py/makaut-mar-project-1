@@ -128,6 +128,10 @@ unsigned long startupCheckLastAttempt = 0;
 unsigned long startupWarningLastBeep = 0;
 unsigned long startupResultDisplayUntil = 0;
 unsigned long sensorRecoveryLastAttempt = 0;
+unsigned long startupSplashStart = 0;
+uint8_t startupSplashIndex = 0;
+const uint8_t STARTUP_SPLASH_COUNT = 3;
+const unsigned long STARTUP_SPLASH_TIME = 2000UL;
 
 const unsigned long STARTUP_SENSOR_CHECK_INTERVAL = 1000UL;
 const unsigned long STARTUP_WARNING_REPEAT_TIME = 1500UL;
@@ -658,23 +662,10 @@ void startupBeep() {
 
   tone(
     BUZZER_PIN,
-    1800
+    1000
   );
 
-  delay(120);
-
-  noTone(
-    BUZZER_PIN
-  );
-
-  delay(100);
-
-  tone(
-    BUZZER_PIN,
-    2200
-  );
-
-  delay(120);
+  delay(80);
 
   noTone(
     BUZZER_PIN
@@ -692,6 +683,67 @@ void startupHappyBeep() {
     delay(90);
     noTone(BUZZER_PIN);
     delay(45);
+  }
+}
+
+void showCenteredText(const char* text, int y) {
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (SCREEN_WIDTH - w) / 2;
+
+  display.setCursor(x, y);
+  display.println(text);
+}
+
+void showStartupSplashScreen() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+
+  if (startupSplashIndex == 0) {
+    showCenteredText("SMART PLANT", 10);
+    showCenteredText("MONITORING", 24);
+    showCenteredText("SYSTEM", 38);
+  } else if (startupSplashIndex == 1) {
+    showCenteredText("CODE BY", 10);
+    showCenteredText("SOUMYADEEP SAMANTA", 28);
+    startupBeep();
+  } else if (startupSplashIndex == 2) {
+    showCenteredText("DESIGN BY", 10);
+    showCenteredText("TAMAGHNA BASU", 28);
+  }
+
+  display.display();
+}
+
+void startupSplashTask() {
+  if (startupPhase != STARTUP_BOOT) {
+    return;
+  }
+
+  if (startupSplashStart == 0) {
+    startupSplashStart = millis();
+    showStartupSplashScreen();
+    return;
+  }
+
+  if (millis() - startupSplashStart >= STARTUP_SPLASH_TIME) {
+    startupSplashIndex++;
+    startupSplashStart = millis();
+
+    if (startupSplashIndex >= STARTUP_SPLASH_COUNT) {
+      startupSplashIndex = 0;
+      startupSplashStart = 0;
+      startupPhase = STARTUP_SENSOR_CHECK;
+      startupSensorCheckPassed = false;
+      startupCheckLastAttempt = 0;
+      startupWarningLastBeep = 0;
+      return;
+    }
+
+    showStartupSplashScreen();
   }
 }
 
@@ -3283,6 +3335,11 @@ void showOLED() {
     return;
   }
 
+  if (startupPhase == STARTUP_BOOT) {
+    showStartupSplashScreen();
+    return;
+  }
+
   if (
     startupPhase != STARTUP_READY ||
     millis() < startupResultDisplayUntil
@@ -3855,10 +3912,12 @@ void setup() {
 
 
   // ==========================================================
-  // SENSOR STARTUP CHECK
+  // BOOT SPLASH SEQUENCE
   // ==========================================================
 
-  startupPhase = STARTUP_SENSOR_CHECK;
+  startupPhase = STARTUP_BOOT;
+  startupSplashIndex = 0;
+  startupSplashStart = 0;
   startupSensorCheckPassed = false;
   startupCheckLastAttempt = 0;
   startupWarningLastBeep = 0;
@@ -3914,6 +3973,13 @@ void loop() {
   checkButton();
   checkOLEDButton();
 
+  if (startupPhase == STARTUP_BOOT) {
+    startupSplashTask();
+    updateBuzzer();
+    oledTask();
+    updateRGB();
+    return;
+  }
 
   if (startupPhase == STARTUP_SENSOR_CHECK) {
     startupSensorCheckTask();
