@@ -81,18 +81,62 @@ D:.
 ```
 
 
-# 👨‍💻 About Me
+# Hi, I'm Tamaghna Basu
+**First Year B.Tech Student | Electronics & Communication Engineering (ECE)**
 
-Hi! I'm **Soumyadeep Samanta**, a first-year **B.Tech student in Computer Science and Engineering**.
+I am a first-year **B.Tech ECE student** with a strong interest in **electronics, embedded systems, microcontrollers, sensors, and hardware-based technology**. I enjoy understanding how electronic circuits work and turning ideas into practical projects by combining hardware and programming.
 
-I am interested in **programming, embedded systems, IoT, and developing practical technology-based projects**. Through this project, I am exploring the integration of hardware, sensors, embedded programming, and web technologies using the ESP32.
+🔧 I am particularly interested in exploring **Arduino, ESP32, sensors, digital electronics, analog circuits, communication systems, and embedded programming**.
 
-This project is part of my learning journey, where I aim to strengthen my skills in:
-- 💻 C/C++ programming
-- 🔌 Embedded systems
-- 🌐 Web development
-- 📡 IoT and wireless communication
-- 🧩 Hardware-software integration
-- 🌱 Smart monitoring systems
+## ⚡ Areas I'm Exploring
 
-I enjoy learning by building projects and experimenting with different technologies.
+* 🔌 Electronic Circuits & Circuit Design
+* 🤖 Microcontrollers & Embedded Systems
+* 📟 Arduino & ESP32 Development
+* 🌡️ Sensors & Instrumentation
+* 💻 C/C++ Programming
+* 📡 Communication & IoT Systems
+* 🔋 Power Electronics & Basic Power Systems
+* 🧠 Digital & Analog Electronics
+* 🔧 Hardware Debugging & Prototyping
+* 🌱 Smart Electronics & Automation
+
+## 🛠️ Skills I'm Building
+
+Through academic work and personal projects, I am working on strengthening my skills in:
+
+* **C / C++**
+* **Arduino & ESP32**
+* **Sensor Interfacing**
+* **GPIO, ADC & PWM**
+* **I2C & Serial Communication**
+* **Circuit Design & Prototyping**
+* **Embedded Programming**
+* **PCB & Electronics Fundamentals**
+* **Hardware–Software Integration**
+
+## 🚀 My Learning Journey
+
+I believe the best way to learn electronics is by **building, testing, debugging, and experimenting**.
+
+I use my projects to understand how components such as **microcontrollers, sensors, LEDs, displays, buzzers, and communication modules** work together to create useful electronic systems.
+
+Currently, I am focusing on developing a strong foundation in **electronics and embedded systems** while gradually exploring more advanced areas of ECE.
+
+## 📚 Future Goals
+
+I aim to explore areas such as:
+
+* Embedded Systems
+* Robotics
+* IoT
+* VLSI & Digital Electronics
+* Wireless Communication
+* PCB Design
+* Automation & Control Systems
+* Advanced Microcontroller Applications
+
+> **"Learn the fundamentals. Build something. Break it. Debug it. Build it better."**
+
+Thanks for visiting my GitHub! ⚡
+
