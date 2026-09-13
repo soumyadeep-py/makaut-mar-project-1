@@ -96,3 +96,55 @@ This project is part of my learning journey, where I aim to strengthen my skills
 - 🌱 Smart monitoring systems
 
 I enjoy learning by building projects and experimenting with different technologies.
+
+# 👋 Hi, I'm Tamaghna Basu
+
+🎓 **First Year B.Tech Student | Electronics & Communication Engineering (ECE)**
+
+I am a first-year **B.Tech ECE student** with a strong interest in **electronics, embedded systems, microcontrollers, sensors, and hardware-based technology**. I enjoy understanding how electronic circuits work and turning ideas into practical projects by combining hardware and programming.
+
+🔧 I am particularly interested in exploring **Arduino, ESP32, sensors, digital electronics, analog circuits, communication systems, and embedded programming**.
+
+## ⚡ Areas I'm Exploring
+
+* 🔌 Electronic Circuits & Circuit Design
+* 🤖 Microcontrollers & Embedded Systems
+* 📟 Arduino & ESP32 Development
+* 🌡️ Sensors & Instrumentation
+* 💻 C/C++ Programming
+* 📡 Communication & IoT Systems
+* 🔋 Power Electronics & Basic Power Systems
+* 🧠 Digital & Analog Electronics
+* 🔧 Hardware Debugging & Prototyping
+* 🌱 Smart Electronics & Automation
+
+## 🛠️ Skills I'm Building
+
+Through academic work and personal projects, I am working on strengthening my skills in:
+
+* **C / C++**
+* **Arduino & ESP32**
+* **Sensor Interfacing**
+* **GPIO, ADC & PWM**
+* **I2C & Serial Communication**
+* **Circuit Design & Prototyping**
+* **Embedded Programming**
+* **PCB & Electronics Fundamentals**
+* **Hardware–Software Integration**
+## 📚 Future Goals
+
+I aim to explore areas such as:
+
+* Embedded Systems
+* Robotics
+* IoT
+* VLSI & Digital Electronics
+* Wireless Communication
+* PCB Design
+* Automation & Control Systems
+* Advanced Microcontroller Applications
+
+> **"Learn the fundamentals. Build something. Break it. Debug it. Build it better."**
+
+Thanks for visiting my GitHub! ⚡
+
