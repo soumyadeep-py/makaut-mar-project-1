@@ -146,5 +146,5 @@ I aim to explore areas such as:
 
 > **"Learn the fundamentals. Build something. Break it. Debug it. Build it better."**
 
-Thanks for visiting my GitHub! ⚡
+Thanks for visiting our GitHub! ⚡
 
